@@ -27,7 +27,7 @@ def test_join_limit_10_users():
 
 
 def test_import_json_menu_and_submit_order():
-    menu_json = b'{"title":"t","categories":[{"name":"熱炒類","items":[{"name":"A","price":10}]}]}'
+    menu_json = '{"title":"t","categories":[{"name":"熱炒類","items":[{"name":"A","price":10}]}]}'.encode('utf-8')
     files = {"file": ("menu.json", BytesIO(menu_json), "application/json")}
     resp = client.post("/api/menu/json", files=files)
     assert resp.status_code == 200
@@ -38,6 +38,18 @@ def test_import_json_menu_and_submit_order():
 
     data = client.get("/api/state").json()
     assert data["orders"]["amy"][0]["dish"] == "A"
+
+
+def test_import_map_style_chinese_json_menu():
+    menu_json = '{"冷盤類":[{"名稱":"寧粉一隻","價格":600},{"名稱":"辣椒皮蛋","價格":160}]}'.encode('utf-8')
+    files = {"file": ("menu.json", BytesIO(menu_json), "application/json")}
+    resp = client.post("/api/menu/json", files=files)
+    assert resp.status_code == 200
+
+    data = client.get("/api/state").json()
+    assert data["menu"]["categories"][0]["name"] == "冷盤類"
+    assert data["menu"]["categories"][0]["items"][0]["name"] == "寧粉一隻"
+    assert data["menu"]["categories"][0]["items"][0]["price"] == 600
 
 
 def test_duplicate_dish_flag():

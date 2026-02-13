@@ -1,4 +1,6 @@
 let currentUser = "";
+let lastMenuKey = "";
+let imageDraftItems = [];
 
 async function postForm(url, formData) {
   const res = await fetch(url, { method: "POST", body: formData });
@@ -22,10 +24,22 @@ async function postJson(url, payload) {
   return res.json();
 }
 
+function getMenuKey(menu) {
+  if (!menu) return "";
+  if (menu.type === "image") return `image:${menu.image_path || ""}`;
+  return `json:${menu.title || ""}:${JSON.stringify(menu.categories || [])}`;
+}
+
 async function refreshState() {
   const res = await fetch("/api/state");
   const state = await res.json();
-  renderMenu(state.menu);
+
+  const menuKey = getMenuKey(state.menu);
+  if (menuKey !== lastMenuKey) {
+    renderMenu(state.menu);
+    lastMenuKey = menuKey;
+  }
+
   renderSummary(state);
 }
 
@@ -33,6 +47,7 @@ function renderMenu(menu) {
   const wrap = document.getElementById("menu-view");
 
   if (menu.type === "image") {
+    imageDraftItems = [];
     wrap.innerHTML = `
       <p><strong>${menu.title}</strong></p>
       <img src="${menu.image_path}" alt="菜單圖片" style="max-width:100%;border-radius:8px" />
@@ -44,7 +59,6 @@ function renderMenu(menu) {
       <ul id="my-items"></ul>
       <button id="submit-my-order">送出我的點餐</button>
     `;
-
     attachTextOrderHandlers();
     return;
   }
@@ -80,10 +94,7 @@ function renderMenu(menu) {
       return;
     }
     const checked = [...form.querySelectorAll("input[type='checkbox']:checked")];
-    const items = checked.map((el) => ({
-      dish: el.dataset.dish,
-      price: Number(el.dataset.price) || 0,
-    }));
+    const items = checked.map((el) => ({ dish: el.dataset.dish, price: Number(el.dataset.price) || 0 }));
 
     try {
       await postJson("/api/order", { name: currentUser, items });
@@ -95,21 +106,27 @@ function renderMenu(menu) {
   });
 }
 
-function attachTextOrderHandlers() {
-  const myItems = [];
+function renderImageDraftList() {
   const listEl = document.getElementById("my-items");
+  if (!listEl) return;
+  listEl.innerHTML = imageDraftItems.map((it) => `<li>${it.dish}（$${it.price}）</li>`).join("");
+}
 
+function attachTextOrderHandlers() {
   document.getElementById("text-order-form")?.addEventListener("submit", (e) => {
     e.preventDefault();
-    const dish = document.getElementById("dish-name").value.trim();
-    const priceValue = document.getElementById("dish-price").value;
+    const dishInput = document.getElementById("dish-name");
+    const priceInput = document.getElementById("dish-price");
+    const dish = dishInput.value.trim();
+    const priceValue = priceInput.value;
     const price = priceValue ? Number(priceValue) : 0;
     if (!dish) return;
 
-    myItems.push({ dish, price });
-    listEl.innerHTML = myItems.map((it) => `<li>${it.dish}（$${it.price}）</li>`).join("");
-    document.getElementById("dish-name").value = "";
-    document.getElementById("dish-price").value = "";
+    imageDraftItems.push({ dish, price });
+    renderImageDraftList();
+    dishInput.value = "";
+    priceInput.value = "";
+    dishInput.focus();
   });
 
   document.getElementById("submit-my-order")?.addEventListener("click", async () => {
@@ -118,7 +135,7 @@ function attachTextOrderHandlers() {
       return;
     }
     try {
-      await postJson("/api/order", { name: currentUser, items: myItems });
+      await postJson("/api/order", { name: currentUser, items: imageDraftItems });
       await refreshState();
       alert("送出成功");
     } catch (err) {

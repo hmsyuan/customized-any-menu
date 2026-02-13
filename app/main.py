@@ -41,6 +41,59 @@ class AppState:
         self.orders = {name: [] for name in self.users}
 
 
+def normalize_menu_payload(payload: Any) -> tuple[str, list[dict[str, Any]]]:
+    """Accept both old schema and map-style Chinese schema.
+
+    Supported examples:
+    1) {"title": "...", "categories": [{"name":"熱炒", "items":[{"name":"A","price":1}]}]}
+    2) {"冷盤類": [{"名稱":"寧粉一隻", "價格":600}], "熱炒類": [...]} 
+    """
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="JSON 根節點必須是物件")
+
+    if isinstance(payload.get("categories"), list):
+        categories_raw = payload["categories"]
+        title = str(payload.get("title") or "未命名菜單")
+    else:
+        # Treat keys as category names.
+        categories_raw = [{"name": key, "items": value} for key, value in payload.items() if isinstance(value, list)]
+        title = "未命名菜單"
+
+    categories: list[dict[str, Any]] = []
+    for category in categories_raw:
+        if not isinstance(category, dict):
+            continue
+
+        category_name = str(category.get("name") or category.get("分類") or category.get("category") or "未分類")
+        items_raw = category.get("items", [])
+        if not isinstance(items_raw, list):
+            continue
+
+        normalized_items: list[dict[str, Any]] = []
+        for item in items_raw:
+            if not isinstance(item, dict):
+                continue
+
+            dish_name = str(item.get("name") or item.get("名稱") or item.get("菜名") or "").strip()
+            if not dish_name:
+                continue
+
+            raw_price = item.get("price", item.get("價格", 0))
+            try:
+                price = max(0, int(raw_price))
+            except (TypeError, ValueError):
+                price = 0
+
+            normalized_items.append({"name": dish_name, "price": price})
+
+        categories.append({"name": category_name, "items": normalized_items})
+
+    if not categories:
+        raise HTTPException(status_code=400, detail="找不到可用的分類/菜色資料")
+
+    return title, categories
+
+
 state = AppState()
 app = FastAPI(title="customized-any-menu")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
@@ -76,17 +129,10 @@ async def import_menu_json(file: UploadFile = File(...)) -> dict[str, str]:
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=400, detail="JSON 格式錯誤") from exc
 
-    categories = payload.get("categories", [])
-    if not isinstance(categories, list):
-        raise HTTPException(status_code=400, detail="categories 必須是陣列")
+    title, categories = normalize_menu_payload(payload)
 
     with state.lock:
-        state.menu = MenuState(
-            type="json",
-            title=payload.get("title", "未命名菜單"),
-            categories=categories,
-            image_path=None,
-        )
+        state.menu = MenuState(type="json", title=title, categories=categories, image_path=None)
         state.reset_orders()
 
     return {"message": "JSON 菜單已匯入"}
