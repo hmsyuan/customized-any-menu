@@ -1,0 +1,41 @@
+:root {
+  font-family: Arial, sans-serif;
+  color: #1f2937;
+}
+body {
+  margin: 0;
+  background: #f3f4f6;
+}
+main {
+  max-width: 960px;
+  margin: 20px auto;
+  padding: 0 16px 40px;
+}
+.card {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  padding: 16px;
+  margin-top: 16px;
+}
+.inline {
+  margin-bottom: 10px;
+}
+.category {
+  margin-bottom: 10px;
+  border-left: 3px solid #93c5fd;
+  padding-left: 8px;
+}
+.duplicate {
+  color: #b91c1c;
+  font-weight: 700;
+  background: #fee2e2;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+li {
+  margin-bottom: 6px;
+}
+small {
+  color: #6b7280;
+}
