@@ -49,6 +49,7 @@ def test_aggregated_orders():
     assert row["dish"] == "滷肉飯"
     assert row["quantity"] == 3
     assert row["totalPrice"] == 240
+    assert data["aggregatedGrandTotal"] == 240
 
 
 def test_host_lock_and_release():

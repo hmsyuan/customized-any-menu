@@ -6,15 +6,30 @@ function applyThemeColor(hex) {
   document.documentElement.style.setProperty("--user-bg", hex);
 }
 
-function initThemeColor() {
-  const picker = document.getElementById("theme-color");
-  const saved = localStorage.getItem("menu-theme-color") || "#0b1020";
-  picker.value = saved;
-  applyThemeColor(saved);
+function applyCardColor(hex) {
+  document.documentElement.style.setProperty("--user-card-bg", hex);
+}
 
-  picker.addEventListener("input", () => {
-    localStorage.setItem("menu-theme-color", picker.value);
-    applyThemeColor(picker.value);
+function initThemeColor() {
+  const themePicker = document.getElementById("theme-color");
+  const cardPicker = document.getElementById("card-color");
+
+  const savedTheme = localStorage.getItem("menu-theme-color") || "#0b1020";
+  const savedCard = localStorage.getItem("menu-card-color") || "#111827";
+
+  themePicker.value = savedTheme;
+  cardPicker.value = savedCard;
+  applyThemeColor(savedTheme);
+  applyCardColor(savedCard);
+
+  themePicker.addEventListener("input", () => {
+    localStorage.setItem("menu-theme-color", themePicker.value);
+    applyThemeColor(themePicker.value);
+  });
+
+  cardPicker.addEventListener("input", () => {
+    localStorage.setItem("menu-card-color", cardPicker.value);
+    applyCardColor(cardPicker.value);
   });
 }
 
@@ -95,7 +110,7 @@ async function refreshState() {
   }
 
   renderSummary(state);
-  renderAggregateSummary(state.aggregatedOrders || []);
+  renderAggregateSummary(state.aggregatedOrders || [], state.aggregatedGrandTotal || 0);
 }
 
 function renderMenu(menu) {
@@ -240,7 +255,7 @@ function renderSummary(state) {
     .join("")}</div>`;
 }
 
-function renderAggregateSummary(items) {
+function renderAggregateSummary(items, grandTotal) {
   const wrap = document.getElementById("aggregate-summary");
   if (!items.length) {
     wrap.innerHTML = "<small>尚無彙整結果</small>";
@@ -255,7 +270,7 @@ function renderAggregateSummary(items) {
       <li><strong>總價：$${it.totalPrice}</strong></li>
       </ul></article>`
     )
-    .join("")}</div>`;
+    .join("")}</div><div class="aggregate-grand-total">全部菜色總價格：$${grandTotal}</div>`;
 }
 
 document.getElementById("join-form").addEventListener("submit", async (e) => {

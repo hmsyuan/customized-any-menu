@@ -257,6 +257,7 @@ def get_state() -> dict[str, Any]:
                 aggregate_map[key]["totalPrice"] += item.quantity * item.price
 
         aggregated_orders = sorted(aggregate_map.values(), key=lambda x: (x["dish"], x["price"]))
+        aggregated_grand_total = sum(row["totalPrice"] for row in aggregated_orders)
 
         remaining_seconds = max(0, int(SESSION_TTL_SECONDS - (time.time() - state.session_started_at)))
 
@@ -265,6 +266,7 @@ def get_state() -> dict[str, Any]:
             "users": sorted(state.users),
             "orders": all_orders,
             "aggregatedOrders": aggregated_orders,
+            "aggregatedGrandTotal": aggregated_grand_total,
             "host": state.host,
             "sessionRemainingSeconds": remaining_seconds,
             "duplicateDishes": sorted(duplicate_names),
