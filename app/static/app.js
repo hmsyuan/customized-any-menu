@@ -2,6 +2,22 @@ let currentUser = "";
 let lastMenuKey = "";
 let imageDraftItems = [];
 
+function applyThemeColor(hex) {
+  document.documentElement.style.setProperty("--user-bg", hex);
+}
+
+function initThemeColor() {
+  const picker = document.getElementById("theme-color");
+  const saved = localStorage.getItem("menu-theme-color") || "#0b1020";
+  picker.value = saved;
+  applyThemeColor(saved);
+
+  picker.addEventListener("input", () => {
+    localStorage.setItem("menu-theme-color", picker.value);
+    applyThemeColor(picker.value);
+  });
+}
+
 async function postForm(url, formData) {
   const res = await fetch(url, { method: "POST", body: formData });
   if (!res.ok) {
@@ -79,6 +95,7 @@ async function refreshState() {
   }
 
   renderSummary(state);
+  renderAggregateSummary(state.aggregatedOrders || []);
 }
 
 function renderMenu(menu) {
@@ -91,7 +108,8 @@ function renderMenu(menu) {
       <img src="${menu.image_path}" alt="菜單圖片" style="max-width:100%;border-radius:12px" />
       <form id="text-order-form" class="inline-form" style="margin-top:10px">
         <input id="dish-name" placeholder="菜名，例如：三杯雞" required />
-        <input id="dish-price" type="number" min="0" placeholder="價格（選填）" />
+        <input id="dish-price" type="number" min="0" placeholder="價格" />
+        <input id="dish-quantity" type="number" min="1" value="1" placeholder="數量" />
         <button type="submit">新增到我的清單</button>
       </form>
       <ul id="my-items"></ul>
@@ -110,6 +128,7 @@ function renderMenu(menu) {
             <input type="checkbox" data-dish="${item.name}" data-price="${Number(item.price) || 0}" id="item-${i}-${j}" />
             <span>${item.name}</span>
             <strong>$${Number(item.price) || 0}</strong>
+            <input type="number" min="1" value="1" class="qty-input" id="qty-${i}-${j}" />
           </label>`
         )
         .join("");
@@ -133,7 +152,14 @@ function renderMenu(menu) {
       return;
     }
     const checked = [...form.querySelectorAll("input[type='checkbox']:checked")];
-    const items = checked.map((el) => ({ dish: el.dataset.dish, price: Number(el.dataset.price) || 0 }));
+    const items = checked.map((el) => {
+      const qtyInput = document.getElementById(el.id.replace("item-", "qty-"));
+      return {
+        dish: el.dataset.dish,
+        price: Number(el.dataset.price) || 0,
+        quantity: Math.max(1, Number(qtyInput?.value || 1)),
+      };
+    });
 
     try {
       await postJson("/api/order", { name: currentUser, items });
@@ -148,7 +174,9 @@ function renderMenu(menu) {
 function renderImageDraftList() {
   const listEl = document.getElementById("my-items");
   if (!listEl) return;
-  listEl.innerHTML = imageDraftItems.map((it) => `<li>${it.dish}（$${it.price}）</li>`).join("");
+  listEl.innerHTML = imageDraftItems
+    .map((it) => `<li>${it.dish}（$${it.price}）x ${it.quantity}，小計 $${it.price * it.quantity}</li>`)
+    .join("");
 }
 
 function attachTextOrderHandlers() {
@@ -156,15 +184,17 @@ function attachTextOrderHandlers() {
     e.preventDefault();
     const dishInput = document.getElementById("dish-name");
     const priceInput = document.getElementById("dish-price");
+    const qtyInput = document.getElementById("dish-quantity");
     const dish = dishInput.value.trim();
-    const priceValue = priceInput.value;
-    const price = priceValue ? Number(priceValue) : 0;
+    const price = Math.max(0, Number(priceInput.value || 0));
+    const quantity = Math.max(1, Number(qtyInput.value || 1));
     if (!dish) return;
 
-    imageDraftItems.push({ dish, price });
+    imageDraftItems.push({ dish, price, quantity });
     renderImageDraftList();
     dishInput.value = "";
     priceInput.value = "";
+    qtyInput.value = "1";
     dishInput.focus();
   });
 
@@ -201,12 +231,30 @@ function renderSummary(state) {
         ? items
             .map((it) => {
               const cls = duplicateSet.has(it.dish) ? "duplicate" : "";
-              return `<li><span class="${cls}">${it.dish}</span>（$${it.price}）</li>`;
+              return `<li><span class="${cls}">${it.dish}</span>（$${it.price}）x ${it.quantity}，小計 $${it.lineTotal}</li>`;
             })
             .join("")
         : "<li><small>尚未點餐</small></li>";
       return `<article class="summary-card"><h3>${name}</h3><ul>${itemsHtml}</ul></article>`;
     })
+    .join("")}</div>`;
+}
+
+function renderAggregateSummary(items) {
+  const wrap = document.getElementById("aggregate-summary");
+  if (!items.length) {
+    wrap.innerHTML = "<small>尚無彙整結果</small>";
+    return;
+  }
+
+  wrap.innerHTML = `<div class="summary-grid">${items
+    .map(
+      (it) => `<article class="summary-card"><h3>${it.dish}</h3><ul>
+      <li>單價：$${it.price}</li>
+      <li>份數：${it.quantity}</li>
+      <li><strong>總價：$${it.totalPrice}</strong></li>
+      </ul></article>`
+    )
     .join("")}</div>`;
 }
 
@@ -263,5 +311,6 @@ document.getElementById("image-menu-form").addEventListener("submit", async (e) 
   }
 });
 
+initThemeColor();
 refreshState();
 setInterval(refreshState, 2000);

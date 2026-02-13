@@ -21,7 +21,7 @@ def test_join_limit_10_users():
     assert over.status_code == 400
 
 
-def test_import_json_menu_and_submit_order():
+def test_import_json_menu_and_submit_order_with_quantity():
     menu_json = '{"title":"t","categories":[{"name":"熱炒類","items":[{"name":"A","price":10}]}]}'.encode("utf-8")
     client.post("/api/join", data={"name": "amy"})
 
@@ -29,11 +29,26 @@ def test_import_json_menu_and_submit_order():
     resp = client.post("/api/menu/json", data={"name": "amy"}, files=files)
     assert resp.status_code == 200
 
-    submit = client.post("/api/order", json={"name": "amy", "items": [{"dish": "A", "price": 10}]})
+    submit = client.post("/api/order", json={"name": "amy", "items": [{"dish": "A", "price": 10, "quantity": 3}]})
     assert submit.status_code == 200
 
     data = client.get("/api/state").json()
-    assert data["orders"]["amy"][0]["dish"] == "A"
+    assert data["orders"]["amy"][0]["quantity"] == 3
+    assert data["orders"]["amy"][0]["lineTotal"] == 30
+
+
+def test_aggregated_orders():
+    client.post("/api/join", data={"name": "amy"})
+    client.post("/api/join", data={"name": "bob"})
+
+    client.post("/api/order", json={"name": "amy", "items": [{"dish": "滷肉飯", "price": 80, "quantity": 2}]})
+    client.post("/api/order", json={"name": "bob", "items": [{"dish": "滷肉飯", "price": 80, "quantity": 1}]})
+
+    data = client.get("/api/state").json()
+    row = data["aggregatedOrders"][0]
+    assert row["dish"] == "滷肉飯"
+    assert row["quantity"] == 3
+    assert row["totalPrice"] == 240
 
 
 def test_host_lock_and_release():
@@ -72,8 +87,8 @@ def test_session_expired_clears_everything():
 def test_duplicate_dish_flag():
     client.post("/api/join", data={"name": "amy"})
     client.post("/api/join", data={"name": "bob"})
-    client.post("/api/order", json={"name": "amy", "items": [{"dish": "滷肉飯", "price": 80}]})
-    client.post("/api/order", json={"name": "bob", "items": [{"dish": "滷肉飯", "price": 80}]})
+    client.post("/api/order", json={"name": "amy", "items": [{"dish": "滷肉飯", "price": 80, "quantity": 1}]})
+    client.post("/api/order", json={"name": "bob", "items": [{"dish": "滷肉飯", "price": 80, "quantity": 1}]})
 
     data = client.get("/api/state").json()
     assert "滷肉飯" in data["duplicateDishes"]

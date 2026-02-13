@@ -23,6 +23,7 @@ SESSION_TTL_SECONDS = 60 * 60
 class OrderItem(BaseModel):
     dish: str
     price: int = Field(ge=0, default=0)
+    quantity: int = Field(ge=1, default=1)
 
 
 class MenuState(BaseModel):
@@ -229,11 +230,33 @@ def get_state() -> dict[str, Any]:
 
         all_orders = {
             name: [
-                {"dish": item.dish, "price": item.price, "duplicate": item.dish in duplicate_names}
+                {
+                    "dish": item.dish,
+                    "price": item.price,
+                    "quantity": item.quantity,
+                    "lineTotal": item.price * item.quantity,
+                    "duplicate": item.dish in duplicate_names,
+                }
                 for item in items
             ]
             for name, items in state.orders.items()
         }
+
+        aggregate_map: dict[tuple[str, int], dict[str, Any]] = {}
+        for items in state.orders.values():
+            for item in items:
+                key = (item.dish, item.price)
+                if key not in aggregate_map:
+                    aggregate_map[key] = {
+                        "dish": item.dish,
+                        "price": item.price,
+                        "quantity": 0,
+                        "totalPrice": 0,
+                    }
+                aggregate_map[key]["quantity"] += item.quantity
+                aggregate_map[key]["totalPrice"] += item.quantity * item.price
+
+        aggregated_orders = sorted(aggregate_map.values(), key=lambda x: (x["dish"], x["price"]))
 
         remaining_seconds = max(0, int(SESSION_TTL_SECONDS - (time.time() - state.session_started_at)))
 
@@ -241,6 +264,7 @@ def get_state() -> dict[str, Any]:
             "menu": state.menu.model_dump(),
             "users": sorted(state.users),
             "orders": all_orders,
+            "aggregatedOrders": aggregated_orders,
             "host": state.host,
             "sessionRemainingSeconds": remaining_seconds,
             "duplicateDishes": sorted(duplicate_names),

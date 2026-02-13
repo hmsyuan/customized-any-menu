@@ -8,7 +8,12 @@
   </head>
   <body>
     <main>
-      <h1>多人線上點菜（最多 10 人）</h1>
+      <div class="title-row">
+        <h1>多人線上點菜（最多 10 人）</h1>
+        <label class="theme-picker">背景色
+          <input type="color" id="theme-color" value="#0b1020" />
+        </label>
+      </div>
 
       <section class="card glass">
         <h2>1) 先取名</h2>
@@ -45,6 +50,11 @@
       <section class="card">
         <h2>即時點餐總覽</h2>
         <div id="summary"></div>
+      </section>
+
+      <section class="card">
+        <h2>完整彙整點餐結果（不分點餐人）</h2>
+        <div id="aggregate-summary"></div>
       </section>
     </main>
 

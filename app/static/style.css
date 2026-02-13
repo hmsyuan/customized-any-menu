@@ -1,4 +1,5 @@
 :root {
+  --user-bg: #0b1020;
   font-family: "Inter", "Noto Sans TC", sans-serif;
   color: #e5e7eb;
 }
@@ -9,7 +10,7 @@
 
 body {
   margin: 0;
-  background: radial-gradient(circle at top, #1f2937, #0b1020 60%);
+  background: radial-gradient(circle at top, #1f2937, var(--user-bg) 60%);
 }
 
 main {
@@ -18,9 +19,28 @@ main {
   padding: 0 16px 40px;
 }
 
+.title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 h1 {
   color: #f8fafc;
   letter-spacing: 0.5px;
+  margin: 0;
+}
+
+.theme-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 10px;
+  padding: 6px 10px;
 }
 
 .card {
@@ -104,18 +124,22 @@ button:disabled {
 
 .dish-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  grid-template-columns: repeat(2, minmax(140px, 1fr));
   gap: 8px;
 }
 
 .dish-option {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
   gap: 8px;
   align-items: center;
-  justify-content: space-between;
   padding: 8px;
   border-radius: 10px;
   background: rgba(30, 41, 59, 0.8);
+}
+
+.qty-input {
+  width: 72px;
 }
 
 .summary-grid {
