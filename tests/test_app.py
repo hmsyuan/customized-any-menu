@@ -9,12 +9,7 @@ client = TestClient(app)
 
 def setup_function():
     with state.lock:
-        state.users.clear()
-        state.orders.clear()
-        state.menu.type = "json"
-        state.menu.title = "未命名菜單"
-        state.menu.categories = []
-        state.menu.image_path = None
+        state.reset_all()
 
 
 def test_join_limit_10_users():
@@ -27,12 +22,13 @@ def test_join_limit_10_users():
 
 
 def test_import_json_menu_and_submit_order():
-    menu_json = '{"title":"t","categories":[{"name":"熱炒類","items":[{"name":"A","price":10}]}]}'.encode('utf-8')
+    menu_json = '{"title":"t","categories":[{"name":"熱炒類","items":[{"name":"A","price":10}]}]}'.encode("utf-8")
+    client.post("/api/join", data={"name": "amy"})
+
     files = {"file": ("menu.json", BytesIO(menu_json), "application/json")}
-    resp = client.post("/api/menu/json", files=files)
+    resp = client.post("/api/menu/json", data={"name": "amy"}, files=files)
     assert resp.status_code == 200
 
-    client.post("/api/join", data={"name": "amy"})
     submit = client.post("/api/order", json={"name": "amy", "items": [{"dish": "A", "price": 10}]})
     assert submit.status_code == 200
 
@@ -40,16 +36,37 @@ def test_import_json_menu_and_submit_order():
     assert data["orders"]["amy"][0]["dish"] == "A"
 
 
-def test_import_map_style_chinese_json_menu():
-    menu_json = '{"冷盤類":[{"名稱":"寧粉一隻","價格":600},{"名稱":"辣椒皮蛋","價格":160}]}'.encode('utf-8')
+def test_host_lock_and_release():
+    menu_json = '{"冷盤類":[{"名稱":"寧粉一隻","價格":600}]}'.encode("utf-8")
+    client.post("/api/join", data={"name": "amy"})
+    client.post("/api/join", data={"name": "bob"})
+
     files = {"file": ("menu.json", BytesIO(menu_json), "application/json")}
-    resp = client.post("/api/menu/json", files=files)
-    assert resp.status_code == 200
+    first = client.post("/api/menu/json", data={"name": "amy"}, files=files)
+    assert first.status_code == 200
+
+    second = client.post("/api/menu/json", data={"name": "bob"}, files=files)
+    assert second.status_code == 403
+
+    release = client.post("/api/host/release", json={"name": "amy"})
+    assert release.status_code == 200
+
+    third = client.post("/api/menu/json", data={"name": "bob"}, files=files)
+    assert third.status_code == 200
+
+
+def test_session_expired_clears_everything():
+    client.post("/api/join", data={"name": "amy"})
+
+    with state.lock:
+        state.host = "amy"
+        state.users.add("amy")
+        state.orders["amy"] = []
+        state.session_started_at -= 3661
 
     data = client.get("/api/state").json()
-    assert data["menu"]["categories"][0]["name"] == "冷盤類"
-    assert data["menu"]["categories"][0]["items"][0]["name"] == "寧粉一隻"
-    assert data["menu"]["categories"][0]["items"][0]["price"] == 600
+    assert data["users"] == []
+    assert data["host"] is None
 
 
 def test_duplicate_dish_flag():

@@ -10,29 +10,29 @@
     <main>
       <h1>多人線上點菜（最多 10 人）</h1>
 
-      <section class="card">
+      <section class="card glass">
         <h2>1) 先取名</h2>
-        <form id="join-form">
+        <form id="join-form" class="inline-form">
           <input id="name" placeholder="輸入你的名稱" required />
           <button type="submit">加入</button>
         </form>
         <p id="whoami"></p>
+        <div id="host-panel"></div>
       </section>
 
       <section class="card">
         <h2>2) 匯入菜單（主持人操作）</h2>
-        <div class="inline">
-          <form id="json-menu-form">
+        <div class="upload-grid">
+          <form id="json-menu-form" class="inline-form">
             <label>JSON 菜單：</label>
             <input type="file" id="json-file" accept="application/json" required />
-            <button type="submit">匯入 JSON</button>
+            <button id="json-submit-btn" type="submit">匯入 JSON</button>
           </form>
-        </div>
-        <div class="inline">
-          <form id="image-menu-form">
+
+          <form id="image-menu-form" class="inline-form">
             <label>圖片菜單：</label>
             <input type="file" id="image-file" accept="image/*" required />
-            <button type="submit">匯入圖片</button>
+            <button id="image-submit-btn" type="submit">匯入圖片</button>
           </form>
         </div>
       </section>

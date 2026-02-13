@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 import uuid
 from collections import Counter
 from pathlib import Path
@@ -16,6 +17,7 @@ from pydantic import BaseModel, Field
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+SESSION_TTL_SECONDS = 60 * 60
 
 
 class OrderItem(BaseModel):
@@ -36,18 +38,38 @@ class AppState:
         self.menu = MenuState()
         self.users: set[str] = set()
         self.orders: dict[str, list[OrderItem]] = {}
+        self.host: str | None = None
+        self.session_started_at = time.time()
 
     def reset_orders(self) -> None:
         self.orders = {name: [] for name in self.users}
 
+    def reset_all(self) -> None:
+        self.menu = MenuState()
+        self.users.clear()
+        self.orders.clear()
+        self.host = None
+        self.session_started_at = time.time()
+
+    def expire_if_needed(self) -> None:
+        if time.time() - self.session_started_at >= SESSION_TTL_SECONDS:
+            self.reset_all()
+
+    def assert_host_can_manage_menu(self, user_name: str) -> None:
+        if self.host is not None and self.host != user_name:
+            raise HTTPException(status_code=403, detail=f"目前主持人是 {self.host}，只有主持人可調整菜單")
+
+
+class SubmitOrderPayload(BaseModel):
+    name: str
+    items: list[OrderItem]
+
+
+class ReleaseHostPayload(BaseModel):
+    name: str
+
 
 def normalize_menu_payload(payload: Any) -> tuple[str, list[dict[str, Any]]]:
-    """Accept both old schema and map-style Chinese schema.
-
-    Supported examples:
-    1) {"title": "...", "categories": [{"name":"熱炒", "items":[{"name":"A","price":1}]}]}
-    2) {"冷盤類": [{"名稱":"寧粉一隻", "價格":600}], "熱炒類": [...]} 
-    """
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="JSON 根節點必須是物件")
 
@@ -55,7 +77,6 @@ def normalize_menu_payload(payload: Any) -> tuple[str, list[dict[str, Any]]]:
         categories_raw = payload["categories"]
         title = str(payload.get("title") or "未命名菜單")
     else:
-        # Treat keys as category names.
         categories_raw = [{"name": key, "items": value} for key, value in payload.items() if isinstance(value, list)]
         title = "未命名菜單"
 
@@ -113,6 +134,7 @@ def join(name: str = Form(...)) -> dict[str, str]:
         raise HTTPException(status_code=400, detail="名稱不能空白")
 
     with state.lock:
+        state.expire_if_needed()
         if clean not in state.users and len(state.users) >= 10:
             raise HTTPException(status_code=400, detail="目前最多 10 位使用者")
         state.users.add(clean)
@@ -122,7 +144,7 @@ def join(name: str = Form(...)) -> dict[str, str]:
 
 
 @app.post("/api/menu/json")
-async def import_menu_json(file: UploadFile = File(...)) -> dict[str, str]:
+async def import_menu_json(name: str = Form(...), file: UploadFile = File(...)) -> dict[str, str]:
     try:
         raw = await file.read()
         payload = json.loads(raw)
@@ -132,6 +154,14 @@ async def import_menu_json(file: UploadFile = File(...)) -> dict[str, str]:
     title, categories = normalize_menu_payload(payload)
 
     with state.lock:
+        state.expire_if_needed()
+        if name not in state.users:
+            raise HTTPException(status_code=400, detail="請先加入並命名")
+        state.assert_host_can_manage_menu(name)
+
+        if state.host is None:
+            state.host = name
+
         state.menu = MenuState(type="json", title=title, categories=categories, image_path=None)
         state.reset_orders()
 
@@ -139,7 +169,7 @@ async def import_menu_json(file: UploadFile = File(...)) -> dict[str, str]:
 
 
 @app.post("/api/menu/image")
-async def import_menu_image(file: UploadFile = File(...)) -> dict[str, str]:
+async def import_menu_image(name: str = Form(...), file: UploadFile = File(...)) -> dict[str, str]:
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in {".png", ".jpg", ".jpeg", ".webp"}:
         raise HTTPException(status_code=400, detail="僅支援 png/jpg/jpeg/webp")
@@ -150,20 +180,38 @@ async def import_menu_image(file: UploadFile = File(...)) -> dict[str, str]:
     save_path.write_bytes(content)
 
     with state.lock:
+        state.expire_if_needed()
+        if name not in state.users:
+            raise HTTPException(status_code=400, detail="請先加入並命名")
+        state.assert_host_can_manage_menu(name)
+
+        if state.host is None:
+            state.host = name
+
         state.menu = MenuState(type="image", title="圖片菜單", categories=[], image_path=f"/uploads/{filename}")
         state.reset_orders()
 
     return {"message": "圖片菜單已匯入"}
 
 
-class SubmitOrderPayload(BaseModel):
-    name: str
-    items: list[OrderItem]
+@app.post("/api/host/release")
+def release_host(payload: ReleaseHostPayload) -> dict[str, str]:
+    with state.lock:
+        state.expire_if_needed()
+        if state.host is None:
+            raise HTTPException(status_code=400, detail="目前沒有主持人")
+        if payload.name != state.host:
+            raise HTTPException(status_code=403, detail="只有主持人可以放棄主持權")
+
+        state.host = None
+
+    return {"message": "已放棄主持權，其他人可重新上傳菜單"}
 
 
 @app.post("/api/order")
 def submit_order(payload: SubmitOrderPayload) -> dict[str, str]:
     with state.lock:
+        state.expire_if_needed()
         if payload.name not in state.users:
             raise HTTPException(status_code=400, detail="請先加入並命名")
         state.orders[payload.name] = payload.items
@@ -174,6 +222,8 @@ def submit_order(payload: SubmitOrderPayload) -> dict[str, str]:
 @app.get("/api/state")
 def get_state() -> dict[str, Any]:
     with state.lock:
+        state.expire_if_needed()
+
         flat_dishes = [item.dish for items in state.orders.values() for item in items if item.dish]
         duplicate_names = {dish for dish, count in Counter(flat_dishes).items() if count > 1}
 
@@ -185,9 +235,13 @@ def get_state() -> dict[str, Any]:
             for name, items in state.orders.items()
         }
 
+        remaining_seconds = max(0, int(SESSION_TTL_SECONDS - (time.time() - state.session_started_at)))
+
         return {
             "menu": state.menu.model_dump(),
             "users": sorted(state.users),
             "orders": all_orders,
+            "host": state.host,
+            "sessionRemainingSeconds": remaining_seconds,
             "duplicateDishes": sorted(duplicate_names),
         }
