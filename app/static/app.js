@@ -1,6 +1,7 @@
 let currentUser = "";
 let lastMenuKey = "";
 let imageDraftItems = [];
+let canEditDraftItems = true;
 
 function applyThemeColor(hex) {
   document.documentElement.style.setProperty("--user-bg", hex);
@@ -123,6 +124,11 @@ function renderMenu(menu) {
       <img src="${menu.image_path}" alt="菜單圖片" style="max-width:100%;border-radius:12px" />
       <form id="text-order-form" class="inline-form" style="margin-top:10px">
         <input id="dish-name" placeholder="菜名，例如：三杯雞" required />
+        <select id="dish-size">
+          <option value="小">小</option>
+          <option value="中" selected>中</option>
+          <option value="大">大</option>
+        </select>
         <input id="dish-price" type="number" min="0" placeholder="價格" />
         <input id="dish-quantity" type="number" min="1" value="1" placeholder="數量" />
         <button type="submit">新增到我的清單</button>
@@ -138,16 +144,29 @@ function renderMenu(menu) {
     .map((category, i) => {
       const itemsHtml = (category.items || [])
         .map(
-          (item, j) => `
+          (item, j) => {
+            const sizeOptions = item.sizeOptions || [
+              { size: "小", price: Number(item.price) || 0 },
+              { size: "中", price: Number(item.price) || 0 },
+              { size: "大", price: Number(item.price) || 0 },
+            ];
+            const optionsHtml = sizeOptions
+              .map((opt) => `<option value="${opt.size}" data-price="${Number(opt.price) || 0}" ${opt.size === "中" ? "selected" : ""}>${opt.size} - $${Number(opt.price) || 0}</option>`)
+              .join("");
+            const defaultMedium = sizeOptions.find((opt) => opt.size === "中");
+            const defaultPrice = Number(defaultMedium?.price ?? sizeOptions[0]?.price ?? 0);
+            return `
           <label class="dish-option">
-            <input type="checkbox" data-dish="${item.name}" data-price="${Number(item.price) || 0}" id="item-${i}-${j}" />
+            <input type="checkbox" data-dish="${item.name}" data-price="${defaultPrice}" data-size="中" id="item-${i}-${j}" />
             <span>${item.name}</span>
-            <strong>$${Number(item.price) || 0}</strong>
+            <select class="size-select" id="size-${i}-${j}">${optionsHtml}</select>
+            <strong class="price-tag" id="price-${i}-${j}">$${defaultPrice}</strong>
             <input type="number" min="1" value="1" class="qty-input" id="qty-${i}-${j}" />
-          </label>`
+          </label>`;
+          }
         )
         .join("");
-      return `<div class="category"><h3>${category.name}</h3><div class="dish-grid">${itemsHtml}</div></div>`;
+      return `<details class="category" open><summary>${category.name}</summary><div class="dish-grid">${itemsHtml}</div></details>`;
     })
     .join("");
 
@@ -160,6 +179,24 @@ function renderMenu(menu) {
   `;
 
   const form = document.getElementById("json-order-form");
+  form?.querySelectorAll(".size-select").forEach((selectEl) => {
+    selectEl.addEventListener("change", () => {
+      const id = selectEl.id.replace("size-", "");
+      const check = document.getElementById(`item-${id}`);
+      const priceTag = document.getElementById(`price-${id}`);
+      const chosen = selectEl.options[selectEl.selectedIndex];
+      const price = Number(chosen.dataset.price || 0);
+      const size = chosen.value;
+      if (check) {
+        check.dataset.price = String(price);
+        check.dataset.size = size;
+      }
+      if (priceTag) {
+        priceTag.textContent = `$${price}`;
+      }
+    });
+  });
+
   form?.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!currentUser) {
@@ -171,6 +208,7 @@ function renderMenu(menu) {
       const qtyInput = document.getElementById(el.id.replace("item-", "qty-"));
       return {
         dish: el.dataset.dish,
+        size: el.dataset.size || "中",
         price: Number(el.dataset.price) || 0,
         quantity: Math.max(1, Number(qtyInput?.value || 1)),
       };
@@ -190,8 +228,23 @@ function renderImageDraftList() {
   const listEl = document.getElementById("my-items");
   if (!listEl) return;
   listEl.innerHTML = imageDraftItems
-    .map((it) => `<li>${it.dish}（$${it.price}）x ${it.quantity}，小計 $${it.price * it.quantity}</li>`)
+    .map(
+      (it, idx) =>
+        `<li>${it.dish}（${it.size}，$${it.price}）x ${it.quantity}，小計 $${it.price * it.quantity} ${
+          canEditDraftItems
+            ? `<button type=\"button\" class=\"inline-delete-btn\" data-delete-draft=\"${idx}\">刪除</button>`
+            : ""
+        }</li>`
+    )
     .join("");
+
+  listEl.querySelectorAll("[data-delete-draft]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = Number(btn.dataset.deleteDraft);
+      imageDraftItems.splice(idx, 1);
+      renderImageDraftList();
+    });
+  });
 }
 
 function attachTextOrderHandlers() {
@@ -199,13 +252,15 @@ function attachTextOrderHandlers() {
     e.preventDefault();
     const dishInput = document.getElementById("dish-name");
     const priceInput = document.getElementById("dish-price");
+    const sizeInput = document.getElementById("dish-size");
     const qtyInput = document.getElementById("dish-quantity");
     const dish = dishInput.value.trim();
     const price = Math.max(0, Number(priceInput.value || 0));
+    const size = sizeInput.value || "中";
     const quantity = Math.max(1, Number(qtyInput.value || 1));
     if (!dish) return;
 
-    imageDraftItems.push({ dish, price, quantity });
+    imageDraftItems.push({ dish, size, price, quantity });
     renderImageDraftList();
     dishInput.value = "";
     priceInput.value = "";
@@ -220,6 +275,8 @@ function attachTextOrderHandlers() {
     }
     try {
       await postJson("/api/order", { name: currentUser, items: imageDraftItems });
+      imageDraftItems = [];
+      renderImageDraftList();
       await refreshState();
       alert("送出成功");
     } catch (err) {
@@ -239,20 +296,41 @@ function renderSummary(state) {
     return;
   }
 
+  canEditDraftItems = !!(currentUser && !((state.orders || {})[currentUser] || []).length);
+
   summary.innerHTML = `<div class="summary-grid">${users
     .map((name) => {
       const items = orders[name] || [];
       const itemsHtml = items.length
         ? items
-            .map((it) => {
+            .map((it, idx) => {
               const cls = duplicateSet.has(it.dish) ? "duplicate" : "";
-              return `<li><span class="${cls}">${it.dish}</span>（$${it.price}）x ${it.quantity}，小計 $${it.lineTotal}</li>`;
+              const canDelete = currentUser && currentUser === state.host;
+              const deleteBtn = canDelete
+                ? `<button type="button" class="inline-delete-btn" data-owner="${name}" data-index="${idx}">主持人刪除</button>`
+                : "";
+              return `<li><span class="${cls}">${it.dish}</span>（${it.size || "中"}，$${it.price}）x ${it.quantity}，小計 $${it.lineTotal} ${deleteBtn}</li>`;
             })
             .join("")
         : "<li><small>尚未點餐</small></li>";
       return `<article class="summary-card"><h3>${name}</h3><ul>${itemsHtml}</ul></article>`;
     })
     .join("")}</div>`;
+
+  summary.querySelectorAll("[data-owner][data-index]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        await postJson("/api/order/delete-submitted-item", {
+          actor: currentUser,
+          target_user: btn.dataset.owner,
+          item_index: Number(btn.dataset.index),
+        });
+        await refreshState();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
 }
 
 function renderAggregateSummary(items, grandTotal) {
@@ -265,6 +343,7 @@ function renderAggregateSummary(items, grandTotal) {
   wrap.innerHTML = `<div class="summary-grid">${items
     .map(
       (it) => `<article class="summary-card"><h3>${it.dish}</h3><ul>
+      <li>份量：${it.size || "中"}</li>
       <li>單價：$${it.price}</li>
       <li>份數：${it.quantity}</li>
       <li><strong>總價：$${it.totalPrice}</strong></li>

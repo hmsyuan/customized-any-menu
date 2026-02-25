@@ -22,6 +22,7 @@ SESSION_TTL_SECONDS = 60 * 60
 
 class OrderItem(BaseModel):
     dish: str
+    size: str = "中"
     price: int = Field(ge=0, default=0)
     quantity: int = Field(ge=1, default=1)
 
@@ -70,6 +71,12 @@ class ReleaseHostPayload(BaseModel):
     name: str
 
 
+class DeleteSubmittedItemPayload(BaseModel):
+    actor: str
+    target_user: str
+    item_index: int = Field(ge=0)
+
+
 def normalize_menu_payload(payload: Any) -> tuple[str, list[dict[str, Any]]]:
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="JSON 根節點必須是物件")
@@ -80,6 +87,42 @@ def normalize_menu_payload(payload: Any) -> tuple[str, list[dict[str, Any]]]:
     else:
         categories_raw = [{"name": key, "items": value} for key, value in payload.items() if isinstance(value, list)]
         title = "未命名菜單"
+
+    def parse_size_prices(raw_price: Any) -> list[dict[str, Any]]:
+        size_aliases = {
+            "小": "小",
+            "small": "小",
+            "s": "小",
+            "中": "中",
+            "medium": "中",
+            "m": "中",
+            "大": "大",
+            "large": "大",
+            "l": "大",
+        }
+        default_sizes = ["小", "中", "大"]
+
+        if isinstance(raw_price, dict):
+            parsed: dict[str, int] = {}
+            for key, value in raw_price.items():
+                size_key = size_aliases.get(str(key).strip().lower(), str(key).strip())
+                try:
+                    parsed[size_key] = max(0, int(value))
+                except (TypeError, ValueError):
+                    continue
+
+            if not parsed:
+                return [{"size": size, "price": 0} for size in default_sizes]
+
+            # 若 JSON 只提供部分份量，缺值時沿用第一個可用價格
+            fallback_price = next(iter(parsed.values()))
+            return [{"size": size, "price": parsed.get(size, fallback_price)} for size in default_sizes]
+
+        try:
+            single_price = max(0, int(raw_price))
+        except (TypeError, ValueError):
+            single_price = 0
+        return [{"size": size, "price": single_price} for size in default_sizes]
 
     categories: list[dict[str, Any]] = []
     for category in categories_raw:
@@ -101,12 +144,14 @@ def normalize_menu_payload(payload: Any) -> tuple[str, list[dict[str, Any]]]:
                 continue
 
             raw_price = item.get("price", item.get("價格", 0))
-            try:
-                price = max(0, int(raw_price))
-            except (TypeError, ValueError):
-                price = 0
-
-            normalized_items.append({"name": dish_name, "price": price})
+            size_options = parse_size_prices(raw_price)
+            normalized_items.append(
+                {
+                    "name": dish_name,
+                    "price": size_options[1]["price"],
+                    "sizeOptions": size_options,
+                }
+            )
 
         categories.append({"name": category_name, "items": normalized_items})
 
@@ -220,6 +265,24 @@ def submit_order(payload: SubmitOrderPayload) -> dict[str, str]:
     return {"message": "送出成功"}
 
 
+@app.post("/api/order/delete-submitted-item")
+def delete_submitted_item(payload: DeleteSubmittedItemPayload) -> dict[str, str]:
+    with state.lock:
+        state.expire_if_needed()
+        if payload.actor != state.host:
+            raise HTTPException(status_code=403, detail="送出後僅主持人可刪除")
+        if payload.target_user not in state.orders:
+            raise HTTPException(status_code=404, detail="找不到目標使用者")
+
+        target_items = state.orders[payload.target_user]
+        if payload.item_index >= len(target_items):
+            raise HTTPException(status_code=400, detail="刪除索引超出範圍")
+
+        del target_items[payload.item_index]
+
+    return {"message": "已刪除送出項目"}
+
+
 @app.get("/api/state")
 def get_state() -> dict[str, Any]:
     with state.lock:
@@ -232,6 +295,7 @@ def get_state() -> dict[str, Any]:
             name: [
                 {
                     "dish": item.dish,
+                    "size": item.size,
                     "price": item.price,
                     "quantity": item.quantity,
                     "lineTotal": item.price * item.quantity,
@@ -242,13 +306,14 @@ def get_state() -> dict[str, Any]:
             for name, items in state.orders.items()
         }
 
-        aggregate_map: dict[tuple[str, int], dict[str, Any]] = {}
+        aggregate_map: dict[tuple[str, str, int], dict[str, Any]] = {}
         for items in state.orders.values():
             for item in items:
-                key = (item.dish, item.price)
+                key = (item.dish, item.size, item.price)
                 if key not in aggregate_map:
                     aggregate_map[key] = {
                         "dish": item.dish,
+                        "size": item.size,
                         "price": item.price,
                         "quantity": 0,
                         "totalPrice": 0,
@@ -256,7 +321,7 @@ def get_state() -> dict[str, Any]:
                 aggregate_map[key]["quantity"] += item.quantity
                 aggregate_map[key]["totalPrice"] += item.quantity * item.price
 
-        aggregated_orders = sorted(aggregate_map.values(), key=lambda x: (x["dish"], x["price"]))
+        aggregated_orders = sorted(aggregate_map.values(), key=lambda x: (x["dish"], x["size"], x["price"]))
         aggregated_grand_total = sum(row["totalPrice"] for row in aggregated_orders)
 
         remaining_seconds = max(0, int(SESSION_TTL_SECONDS - (time.time() - state.session_started_at)))
