@@ -276,8 +276,10 @@ def submit_order(payload: SubmitOrderPayload) -> dict[str, str]:
 def delete_submitted_item(payload: DeleteSubmittedItemPayload) -> dict[str, str]:
     with state.lock:
         state.expire_if_needed()
-        if payload.actor != state.host:
-            raise HTTPException(status_code=403, detail="送出後僅主持人可刪除")
+        is_host = payload.actor == state.host
+        is_self = payload.actor == payload.target_user
+        if not (is_host or is_self):
+            raise HTTPException(status_code=403, detail="僅主持人可刪除所有人，或本人刪除自己的項目")
         if payload.target_user not in state.orders:
             raise HTTPException(status_code=404, detail="找不到目標使用者")
 

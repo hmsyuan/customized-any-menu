@@ -380,9 +380,12 @@ function renderSummary(state) {
         ? items
             .map((it, idx) => {
               const cls = duplicateSet.has(it.dish) ? "duplicate" : "";
-              const canDelete = currentUser && currentUser === state.host;
+              const isHost = currentUser && currentUser === state.host;
+              const isSelf = currentUser && currentUser === name;
+              const canDelete = isHost || isSelf;
+              const deleteLabel = isHost && !isSelf ? "主持人刪除" : "刪除";
               const deleteBtn = canDelete
-                ? `<button type="button" class="inline-delete-btn" data-owner="${name}" data-index="${idx}">主持人刪除</button>`
+                ? `<button type="button" class="inline-delete-btn" data-owner="${name}" data-index="${idx}">${deleteLabel}</button>`
                 : "";
               return `<li><span class="${cls}">${it.dish}</span>（${it.size || "中"}，$${it.price}）x ${it.quantity}，小計 $${it.lineTotal} ${deleteBtn}</li>`;
             })

@@ -170,7 +170,7 @@ def test_aggregate_summary_grouped_by_category():
     assert grouped[1]["categoryTotal"] == 60
 
 
-def test_only_host_can_delete_submitted_item():
+def test_host_or_self_can_delete_submitted_item():
     client.post("/api/join", data={"name": "amy"})
     client.post("/api/join", data={"name": "bob"})
 
@@ -182,20 +182,34 @@ def test_only_host_can_delete_submitted_item():
         "/api/order", json={"name": "bob", "items": [{"dish": "寧粉一隻", "size": "中", "price": 600, "quantity": 1}]}
     )
 
-    forbidden = client.post(
+    self_deleted = client.post(
         "/api/order/delete-submitted-item",
         json={"actor": "bob", "target_user": "bob", "item_index": 0},
     )
-    assert forbidden.status_code == 403
+    assert self_deleted.status_code == 200
 
-    deleted = client.post(
+    client.post(
+        "/api/order", json={"name": "bob", "items": [{"dish": "寧粉一隻", "size": "中", "price": 600, "quantity": 1}]}
+    )
+
+    deleted_by_host = client.post(
         "/api/order/delete-submitted-item",
         json={"actor": "amy", "target_user": "bob", "item_index": 0},
     )
-    assert deleted.status_code == 200
+    assert deleted_by_host.status_code == 200
+
+    client.post(
+        "/api/order", json={"name": "amy", "items": [{"dish": "炒飯", "size": "中", "price": 100, "quantity": 1}]}
+    )
+    forbidden = client.post(
+        "/api/order/delete-submitted-item",
+        json={"actor": "bob", "target_user": "amy", "item_index": 0},
+    )
+    assert forbidden.status_code == 403
 
     data = client.get("/api/state").json()
     assert data["orders"]["bob"] == []
+    assert len(data["orders"]["amy"]) == 1
 
 
 def test_image_upload_is_auxiliary_when_json_menu_exists():
