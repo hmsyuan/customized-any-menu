@@ -173,6 +173,14 @@ button:disabled {
   font-size: 12px;
 }
 
+.size-static {
+  padding: 6px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #f3f4f6;
+  text-align: center;
+}
+
 .qty-input {
   width: 56px;
 }
