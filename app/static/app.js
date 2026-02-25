@@ -224,7 +224,7 @@ function renderMenu(menu) {
           </label>`;
         })
         .join("");
-      return `<details class="category" open><summary>${category.name}</summary><div class="dish-grid">${itemsHtml}</div></details>`;
+      return `<details class="category"><summary>${category.name}</summary><div class="dish-grid">${itemsHtml}</div></details>`;
     })
     .join("");
 
