@@ -15,8 +15,8 @@ function initThemeColor() {
   const themePicker = document.getElementById("theme-color");
   const cardPicker = document.getElementById("card-color");
 
-  const savedTheme = localStorage.getItem("menu-theme-color") || "#f3f4f6";
-  const savedCard = localStorage.getItem("menu-card-color") || "#ffffff";
+  const savedTheme = localStorage.getItem("menu-theme-color") || "#e5e7eb";
+  const savedCard = localStorage.getItem("menu-card-color") || "#f8fafc";
 
   themePicker.value = savedTheme;
   cardPicker.value = savedCard;
@@ -150,15 +150,17 @@ function renderMenu(menu) {
             const defaultOption = defaultMedium || sizeOptions[0] || { size: "中", price: 0 };
             const defaultPrice = Number(defaultOption.price) || 0;
             const hasMultipleSizes = sizeOptions.length > 1;
+            const hasSizeOptions = Boolean(item.hasSizeOptions);
             const optionsHtml = sizeOptions
               .map((opt) => `<option value="${opt.size}" data-price="${Number(opt.price) || 0}" ${opt.size === defaultOption.size ? "selected" : ""}>${opt.size} - $${Number(opt.price) || 0}</option>`)
               .join("");
+            const sizeLabel = hasSizeOptions ? defaultOption.size : "N/A";
             const sizeControlHtml = hasMultipleSizes
               ? `<select class="size-select" id="size-${i}-${j}">${optionsHtml}</select>`
-              : `<span class="size-static">${defaultOption.size}</span>`;
+              : `<span class="size-static">${sizeLabel}</span>`;
             return `
           <label class="dish-option">
-            <input type="checkbox" data-dish="${item.name}" data-price="${defaultPrice}" data-size="${defaultOption.size}" id="item-${i}-${j}" />
+            <input type="checkbox" data-dish="${item.name}" data-price="${defaultPrice}" data-size="${sizeLabel}" id="item-${i}-${j}" />
             <span>${item.name}</span>
             ${sizeControlHtml}
             <strong class="price-tag" id="price-${i}-${j}">$${defaultPrice}</strong>

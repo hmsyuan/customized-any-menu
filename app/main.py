@@ -151,6 +151,7 @@ def normalize_menu_payload(payload: Any) -> tuple[str, list[dict[str, Any]]]:
                     "name": dish_name,
                     "price": default_option["price"],
                     "sizeOptions": size_options,
+                    "hasSizeOptions": isinstance(raw_price, dict),
                 }
             )
 

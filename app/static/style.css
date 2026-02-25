@@ -1,6 +1,6 @@
 :root {
-  --user-bg: #f3f4f6;
-  --user-card-bg: #ffffff;
+  --user-bg: #e5e7eb;
+  --user-card-bg: #f8fafc;
   font-family: "Inter", "Noto Sans TC", sans-serif;
   color: #111827;
 }
@@ -144,18 +144,33 @@ button:disabled {
 
 .dish-option {
   display: grid;
-  grid-template-columns: auto 1fr auto auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
   gap: 8px;
   align-items: center;
-  padding: 8px;
+  padding: 6px 8px;
   border-radius: 10px;
   background: #fff;
   border: 1px solid #e5e7eb;
 }
 
+.dish-option > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .size-select,
 .size-static {
-  min-width: 94px;
+  min-width: 64px;
+}
+
+.size-static {
+  padding: 4px 6px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #f3f4f6;
+  text-align: center;
+  font-size: 12px;
 }
 
 .size-static {
@@ -167,7 +182,7 @@ button:disabled {
 }
 
 .qty-input {
-  width: 72px;
+  width: 56px;
 }
 
 .inline-delete-btn {
