@@ -126,7 +126,13 @@ button:disabled {
   border: 1px solid rgba(148, 163, 184, 0.25);
   background: rgba(15, 23, 42, 0.6);
   border-radius: 12px;
-  padding: 12px;
+  padding: 10px 12px 12px;
+}
+
+.category summary {
+  cursor: pointer;
+  font-weight: 700;
+  margin-bottom: 10px;
 }
 
 .dish-grid {
@@ -137,7 +143,7 @@ button:disabled {
 
 .dish-option {
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
+  grid-template-columns: auto 1fr auto auto auto;
   gap: 8px;
   align-items: center;
   padding: 8px;
@@ -145,8 +151,20 @@ button:disabled {
   background: rgba(30, 41, 59, 0.8);
 }
 
+.size-select {
+  min-width: 94px;
+}
+
 .qty-input {
   width: 72px;
+}
+
+.inline-delete-btn {
+  margin-left: 8px;
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 12px;
 }
 
 .summary-grid {
@@ -219,6 +237,7 @@ small {
   }
 
   .dish-option strong,
+  .dish-option .size-select,
   .dish-option .qty-input {
     grid-column: 2;
   }
