@@ -2,6 +2,8 @@ let currentUser = "";
 let lastMenuKey = "";
 let imageDraftItems = [];
 let canEditDraftItems = true;
+let latestMenu = null;
+let dishSearchKeyword = "";
 
 function applyThemeColor(hex) {
   document.documentElement.style.setProperty("--user-bg", hex);
@@ -103,6 +105,7 @@ async function refreshState() {
   const state = await res.json();
 
   renderHostPanel(state);
+  latestMenu = state.menu;
 
   const menuKey = getMenuKey(state.menu);
   if (menuKey !== lastMenuKey) {
@@ -140,7 +143,18 @@ function renderMenu(menu) {
     return;
   }
 
-  const categoriesHtml = (menu.categories || [])
+  const search = dishSearchKeyword.trim().toLowerCase();
+  const filteredCategories = (menu.categories || [])
+    .map((category) => {
+      const items = (category.items || []).filter((item) => {
+        if (!search) return true;
+        return String(item.name || "").toLowerCase().includes(search);
+      });
+      return { ...category, items };
+    })
+    .filter((category) => category.items.length > 0);
+
+  const categoriesHtml = filteredCategories
     .map((category, i) => {
       const itemsHtml = (category.items || [])
         .map(
@@ -176,7 +190,7 @@ function renderMenu(menu) {
   wrap.innerHTML = `
     <p><strong>${menu.title}</strong></p>
     <form id="json-order-form">
-      <div class="category-layout">${categoriesHtml || "<small>目前沒有菜色</small>"}</div>
+      <div class="category-layout">${categoriesHtml || "<small>查無符合的菜色</small>"}</div>
       <button type="submit">送出我的點餐</button>
     </form>
   `;
@@ -413,3 +427,11 @@ document.getElementById("image-menu-form").addEventListener("submit", async (e) 
 initThemeColor();
 refreshState();
 setInterval(refreshState, 2000);
+
+
+document.getElementById("dish-search")?.addEventListener("input", (e) => {
+  dishSearchKeyword = e.target.value || "";
+  if (latestMenu && latestMenu.type === "json") {
+    renderMenu(latestMenu);
+  }
+});
