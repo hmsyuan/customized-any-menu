@@ -234,6 +234,7 @@ function renderMenu(menu) {
 
   wrap.innerHTML = `
     <p><strong>${menu.title}</strong></p>
+    ${imageHelperHtml}
     <form id="json-order-form">
       <div class="category-layout">${categoriesHtml || "<small>查無符合的菜色</small>"}</div>
       <button type="submit">送出我的點餐</button>
