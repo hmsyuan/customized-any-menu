@@ -4,6 +4,7 @@ let imageDraftItems = [];
 let canEditDraftItems = true;
 let latestMenu = null;
 let dishSearchKeyword = "";
+let jsonSelectionState = {};
 
 function applyThemeColor(hex) {
   document.documentElement.style.setProperty("--user-bg", hex);
@@ -109,6 +110,7 @@ async function refreshState() {
 
   const menuKey = getMenuKey(state.menu);
   if (menuKey !== lastMenuKey) {
+    jsonSelectionState = {};
     renderMenu(state.menu);
     lastMenuKey = menuKey;
   }
@@ -124,7 +126,7 @@ function renderMenu(menu) {
     imageDraftItems = [];
     wrap.innerHTML = `
       <p><strong>${menu.title}</strong></p>
-      <img src="${menu.image_path}" alt="菜單圖片" style="max-width:100%;border-radius:12px" />
+      ${menu.image_path ? `<img src="${menu.image_path}" alt="菜單圖片" style="max-width:100%;border-radius:12px" />` : ""}
       <form id="text-order-form" class="inline-form" style="margin-top:10px">
         <input id="dish-name" placeholder="菜名，例如：三杯雞" required />
         <select id="dish-size">
@@ -144,7 +146,16 @@ function renderMenu(menu) {
   }
 
   const search = dishSearchKeyword.trim().toLowerCase();
-  const filteredCategories = (menu.categories || [])
+  const indexedCategories = (menu.categories || []).map((category, categoryIndex) => ({
+    ...category,
+    _categoryIndex: categoryIndex,
+    items: (category.items || []).map((item, itemIndex) => ({
+      ...item,
+      _itemIndex: itemIndex,
+    })),
+  }));
+
+  const filteredCategories = indexedCategories
     .map((category) => {
       const items = (category.items || []).filter((item) => {
         if (!search) return true;
@@ -155,40 +166,66 @@ function renderMenu(menu) {
     .filter((category) => category.items.length > 0);
 
   const categoriesHtml = filteredCategories
-    .map((category, i) => {
+    .map((category) => {
       const itemsHtml = (category.items || [])
-        .map(
-          (item, j) => {
-            const sizeOptions = item.sizeOptions || [{ size: "中", price: Number(item.price) || 0 }];
-            const defaultMedium = sizeOptions.find((opt) => opt.size === "中");
-            const defaultOption = defaultMedium || sizeOptions[0] || { size: "中", price: 0 };
-            const defaultPrice = Number(defaultOption.price) || 0;
-            const hasMultipleSizes = sizeOptions.length > 1;
-            const hasSizeOptions = Boolean(item.hasSizeOptions);
-            const optionsHtml = sizeOptions
-              .map((opt) => `<option value="${opt.size}" data-price="${Number(opt.price) || 0}" ${opt.size === defaultOption.size ? "selected" : ""}>${opt.size} - $${Number(opt.price) || 0}</option>`)
-              .join("");
-            const sizeLabel = hasSizeOptions ? defaultOption.size : "N/A";
-            const sizeControlHtml = hasMultipleSizes
-              ? `<select class="size-select" id="size-${i}-${j}">${optionsHtml}</select>`
-              : `<span class="size-static">${sizeLabel}</span>`;
-            return `
+        .map((item) => {
+          const stateKey = `${category._categoryIndex}-${item._itemIndex}`;
+          const sizeOptions = item.sizeOptions || [{ size: "中", price: Number(item.price) || 0 }];
+          const defaultMedium = sizeOptions.find((opt) => opt.size === "中");
+          const defaultOption = defaultMedium || sizeOptions[0] || { size: "中", price: 0 };
+          const defaultPrice = Number(defaultOption.price) || 0;
+          const hasMultipleSizes = sizeOptions.length > 1;
+          const hasSizeOptions = Boolean(item.hasSizeOptions);
+          const defaultSizeLabel = hasSizeOptions ? defaultOption.size : "N/A";
+
+          if (!jsonSelectionState[stateKey]) {
+            jsonSelectionState[stateKey] = {
+              checked: false,
+              dish: item.name,
+              quantity: 1,
+              size: defaultSizeLabel,
+              price: defaultPrice,
+            };
+          }
+
+          const rowState = jsonSelectionState[stateKey];
+          const normalizedSize = hasMultipleSizes ? rowState.size : defaultSizeLabel;
+          const normalizedPrice =
+            hasMultipleSizes && rowState.size
+              ? Number(sizeOptions.find((opt) => opt.size === rowState.size)?.price ?? rowState.price)
+              : defaultPrice;
+          rowState.size = normalizedSize;
+          rowState.price = normalizedPrice;
+          rowState.dish = item.name;
+
+          const optionsHtml = sizeOptions
+            .map((opt) => `<option value="${opt.size}" data-price="${Number(opt.price) || 0}" ${opt.size === rowState.size ? "selected" : ""}>${opt.size} - $${Number(opt.price) || 0}</option>`)
+            .join("");
+          const sizeControlHtml = hasMultipleSizes
+            ? `<select class="size-select" id="size-${stateKey}" data-state-key="${stateKey}">${optionsHtml}</select>`
+            : `<span class="size-static">${defaultSizeLabel}</span>`;
+
+          return `
           <label class="dish-option">
-            <input type="checkbox" data-dish="${item.name}" data-price="${defaultPrice}" data-size="${sizeLabel}" id="item-${i}-${j}" />
+            <input type="checkbox" data-state-key="${stateKey}" data-dish="${item.name}" data-price="${rowState.price}" data-size="${rowState.size}" id="item-${stateKey}" ${rowState.checked ? "checked" : ""} />
             <span>${item.name}</span>
             ${sizeControlHtml}
-            <strong class="price-tag" id="price-${i}-${j}">$${defaultPrice}</strong>
-            <input type="number" min="1" value="1" class="qty-input" id="qty-${i}-${j}" />
+            <strong class="price-tag" id="price-${stateKey}">$${rowState.price}</strong>
+            <input type="number" min="1" value="${Math.max(1, Number(rowState.quantity) || 1)}" class="qty-input" id="qty-${stateKey}" data-state-key="${stateKey}" />
           </label>`;
-          }
-        )
+        })
         .join("");
       return `<details class="category" open><summary>${category.name}</summary><div class="dish-grid">${itemsHtml}</div></details>`;
     })
     .join("");
 
+  const imageHelperHtml = menu.image_path
+    ? `<div class="menu-image-helper"><small>菜單圖片（輔助檢視）</small><img src="${menu.image_path}" alt="菜單圖片" style="max-width:100%;border-radius:12px;margin-top:6px" /></div>`
+    : "";
+
   wrap.innerHTML = `
     <p><strong>${menu.title}</strong></p>
+    ${imageHelperHtml}
     <form id="json-order-form">
       <div class="category-layout">${categoriesHtml || "<small>查無符合的菜色</small>"}</div>
       <button type="submit">送出我的點餐</button>
@@ -196,14 +233,36 @@ function renderMenu(menu) {
   `;
 
   const form = document.getElementById("json-order-form");
-  form?.querySelectorAll(".size-select").forEach((selectEl) => {
+
+  form?.querySelectorAll("input[type='checkbox'][data-state-key]").forEach((checkEl) => {
+    checkEl.addEventListener("change", () => {
+      const stateKey = checkEl.dataset.stateKey;
+      if (!stateKey || !jsonSelectionState[stateKey]) return;
+      jsonSelectionState[stateKey].checked = checkEl.checked;
+    });
+  });
+
+  form?.querySelectorAll(".qty-input[data-state-key]").forEach((qtyEl) => {
+    qtyEl.addEventListener("input", () => {
+      const stateKey = qtyEl.dataset.stateKey;
+      if (!stateKey || !jsonSelectionState[stateKey]) return;
+      jsonSelectionState[stateKey].quantity = Math.max(1, Number(qtyEl.value || 1));
+    });
+  });
+
+  form?.querySelectorAll(".size-select[data-state-key]").forEach((selectEl) => {
     selectEl.addEventListener("change", () => {
-      const id = selectEl.id.replace("size-", "");
-      const check = document.getElementById(`item-${id}`);
-      const priceTag = document.getElementById(`price-${id}`);
+      const stateKey = selectEl.dataset.stateKey;
+      if (!stateKey || !jsonSelectionState[stateKey]) return;
+      const priceTag = document.getElementById(`price-${stateKey}`);
+      const check = document.getElementById(`item-${stateKey}`);
       const chosen = selectEl.options[selectEl.selectedIndex];
       const price = Number(chosen.dataset.price || 0);
       const size = chosen.value;
+
+      jsonSelectionState[stateKey].size = size;
+      jsonSelectionState[stateKey].price = price;
+
       if (check) {
         check.dataset.price = String(price);
         check.dataset.size = size;
@@ -220,16 +279,15 @@ function renderMenu(menu) {
       alert("請先取名");
       return;
     }
-    const checked = [...form.querySelectorAll("input[type='checkbox']:checked")];
-    const items = checked.map((el) => {
-      const qtyInput = document.getElementById(el.id.replace("item-", "qty-"));
-      return {
-        dish: el.dataset.dish,
-        size: el.dataset.size || "中",
-        price: Number(el.dataset.price) || 0,
-        quantity: Math.max(1, Number(qtyInput?.value || 1)),
-      };
-    });
+
+    const items = Object.values(jsonSelectionState)
+      .filter((row) => row.checked)
+      .map((row) => ({
+        dish: row.dish,
+        size: row.size || "中",
+        price: Number(row.price) || 0,
+        quantity: Math.max(1, Number(row.quantity) || 1),
+      }));
 
     try {
       await postJson("/api/order", { name: currentUser, items });

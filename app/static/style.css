@@ -154,6 +154,10 @@ button:disabled {
   gap: 8px;
 }
 
+.menu-image-helper {
+  margin-bottom: 10px;
+}
+
 .dish-option {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto auto;

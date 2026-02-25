@@ -196,3 +196,36 @@ def test_only_host_can_delete_submitted_item():
 
     data = client.get("/api/state").json()
     assert data["orders"]["bob"] == []
+
+
+def test_image_upload_is_auxiliary_when_json_menu_exists():
+    client.post("/api/join", data={"name": "amy"})
+
+    menu_json = '{"title":"t","categories":[{"name":"主食","items":[{"name":"滷肉飯","price":80}]}]}'.encode("utf-8")
+    files = {"file": ("menu.json", BytesIO(menu_json), "application/json")}
+    assert client.post("/api/menu/json", data={"name": "amy"}, files=files).status_code == 200
+
+    image_files = {"file": ("menu.png", BytesIO(b"fake-image"), "image/png")}
+    image_resp = client.post("/api/menu/image", data={"name": "amy"}, files=image_files)
+    assert image_resp.status_code == 200
+
+    state_data = client.get("/api/state").json()["menu"]
+    assert state_data["type"] == "json"
+    assert len(state_data["categories"]) == 1
+    assert state_data["image_path"].startswith("/uploads/")
+
+
+def test_json_upload_keeps_existing_image_as_helper():
+    client.post("/api/join", data={"name": "amy"})
+
+    image_files = {"file": ("menu.png", BytesIO(b"fake-image"), "image/png")}
+    assert client.post("/api/menu/image", data={"name": "amy"}, files=image_files).status_code == 200
+
+    menu_json = '{"title":"t","categories":[{"name":"主食","items":[{"name":"滷肉飯","price":80}]}]}'.encode("utf-8")
+    files = {"file": ("menu.json", BytesIO(menu_json), "application/json")}
+    assert client.post("/api/menu/json", data={"name": "amy"}, files=files).status_code == 200
+
+    state_data = client.get("/api/state").json()["menu"]
+    assert state_data["type"] == "json"
+    assert state_data["image_path"].startswith("/uploads/")
+    assert state_data["categories"][0]["items"][0]["name"] == "滷肉飯"

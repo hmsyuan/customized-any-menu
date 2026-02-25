@@ -210,7 +210,8 @@ async def import_menu_json(name: str = Form(...), file: UploadFile = File(...)) 
         if state.host is None:
             state.host = name
 
-        state.menu = MenuState(type="json", title=title, categories=categories, image_path=None)
+        existing_image_path = state.menu.image_path
+        state.menu = MenuState(type="json", title=title, categories=categories, image_path=existing_image_path)
         state.reset_orders()
 
     return {"message": "JSON 菜單已匯入"}
@@ -236,8 +237,12 @@ async def import_menu_image(name: str = Form(...), file: UploadFile = File(...))
         if state.host is None:
             state.host = name
 
-        state.menu = MenuState(type="image", title="圖片菜單", categories=[], image_path=f"/uploads/{filename}")
-        state.reset_orders()
+        image_path = f"/uploads/{filename}"
+        if state.menu.categories:
+            state.menu.image_path = image_path
+        else:
+            state.menu = MenuState(type="image", title="圖片菜單", categories=[], image_path=image_path)
+            state.reset_orders()
 
     return {"message": "圖片菜單已匯入"}
 
