@@ -125,9 +125,52 @@ def test_import_json_supports_size_price_mapping():
         {"size": "中", "price": 520},
         {"size": "大", "price": 620},
     ]
+    assert item["hasSizeOptions"] is True
 
 
-def test_only_host_can_delete_submitted_item():
+def test_import_json_keeps_single_size_when_plain_price():
+    menu_json = (
+        "{\"title\":\"t\",\"categories\":[{\"name\":\"熱炒類\",\"items\":[{\"name\":\"宮保雞丁\",\"price\":180}]}]}"
+    ).encode("utf-8")
+    client.post("/api/join", data={"name": "amy"})
+
+    files = {"file": ("menu.json", BytesIO(menu_json), "application/json")}
+    resp = client.post("/api/menu/json", data={"name": "amy"}, files=files)
+    assert resp.status_code == 200
+
+    state_data = client.get("/api/state").json()
+    item = state_data["menu"]["categories"][0]["items"][0]
+    assert item["sizeOptions"] == [{"size": "中", "price": 180}]
+    assert item["hasSizeOptions"] is False
+
+
+def test_aggregate_summary_grouped_by_category():
+    menu_json = (
+        "{\"title\":\"t\",\"categories\":[{\"name\":\"主食\",\"items\":[{\"name\":\"滷肉飯\",\"price\":80}]},{\"name\":\"湯品\",\"items\":[{\"name\":\"蛤蜊湯\",\"price\":60}]}]}"
+    ).encode("utf-8")
+    client.post("/api/join", data={"name": "amy"})
+    client.post("/api/join", data={"name": "bob"})
+    files = {"file": ("menu.json", BytesIO(menu_json), "application/json")}
+    assert client.post("/api/menu/json", data={"name": "amy"}, files=files).status_code == 200
+
+    client.post(
+        "/api/order", json={"name": "amy", "items": [{"dish": "滷肉飯", "size": "中", "price": 80, "quantity": 2}]}
+    )
+    client.post(
+        "/api/order", json={"name": "bob", "items": [{"dish": "蛤蜊湯", "size": "中", "price": 60, "quantity": 1}]}
+    )
+
+    data = client.get("/api/state").json()
+    grouped = data["aggregatedByCategory"]
+    assert grouped[0]["category"] == "主食"
+    assert grouped[0]["items"][0]["dish"] == "滷肉飯"
+    assert grouped[0]["categoryTotal"] == 160
+    assert grouped[1]["category"] == "湯品"
+    assert grouped[1]["items"][0]["dish"] == "蛤蜊湯"
+    assert grouped[1]["categoryTotal"] == 60
+
+
+def test_host_or_self_can_delete_submitted_item():
     client.post("/api/join", data={"name": "amy"})
     client.post("/api/join", data={"name": "bob"})
 
@@ -139,17 +182,64 @@ def test_only_host_can_delete_submitted_item():
         "/api/order", json={"name": "bob", "items": [{"dish": "寧粉一隻", "size": "中", "price": 600, "quantity": 1}]}
     )
 
-    forbidden = client.post(
+    self_deleted = client.post(
         "/api/order/delete-submitted-item",
         json={"actor": "bob", "target_user": "bob", "item_index": 0},
     )
-    assert forbidden.status_code == 403
+    assert self_deleted.status_code == 200
 
-    deleted = client.post(
+    client.post(
+        "/api/order", json={"name": "bob", "items": [{"dish": "寧粉一隻", "size": "中", "price": 600, "quantity": 1}]}
+    )
+
+    deleted_by_host = client.post(
         "/api/order/delete-submitted-item",
         json={"actor": "amy", "target_user": "bob", "item_index": 0},
     )
-    assert deleted.status_code == 200
+    assert deleted_by_host.status_code == 200
+
+    client.post(
+        "/api/order", json={"name": "amy", "items": [{"dish": "炒飯", "size": "中", "price": 100, "quantity": 1}]}
+    )
+    forbidden = client.post(
+        "/api/order/delete-submitted-item",
+        json={"actor": "bob", "target_user": "amy", "item_index": 0},
+    )
+    assert forbidden.status_code == 403
 
     data = client.get("/api/state").json()
     assert data["orders"]["bob"] == []
+    assert len(data["orders"]["amy"]) == 1
+
+
+def test_image_upload_is_auxiliary_when_json_menu_exists():
+    client.post("/api/join", data={"name": "amy"})
+
+    menu_json = '{"title":"t","categories":[{"name":"主食","items":[{"name":"滷肉飯","price":80}]}]}'.encode("utf-8")
+    files = {"file": ("menu.json", BytesIO(menu_json), "application/json")}
+    assert client.post("/api/menu/json", data={"name": "amy"}, files=files).status_code == 200
+
+    image_files = {"file": ("menu.png", BytesIO(b"fake-image"), "image/png")}
+    image_resp = client.post("/api/menu/image", data={"name": "amy"}, files=image_files)
+    assert image_resp.status_code == 200
+
+    state_data = client.get("/api/state").json()["menu"]
+    assert state_data["type"] == "json"
+    assert len(state_data["categories"]) == 1
+    assert state_data["image_path"].startswith("/uploads/")
+
+
+def test_json_upload_keeps_existing_image_as_helper():
+    client.post("/api/join", data={"name": "amy"})
+
+    image_files = {"file": ("menu.png", BytesIO(b"fake-image"), "image/png")}
+    assert client.post("/api/menu/image", data={"name": "amy"}, files=image_files).status_code == 200
+
+    menu_json = '{"title":"t","categories":[{"name":"主食","items":[{"name":"滷肉飯","price":80}]}]}'.encode("utf-8")
+    files = {"file": ("menu.json", BytesIO(menu_json), "application/json")}
+    assert client.post("/api/menu/json", data={"name": "amy"}, files=files).status_code == 200
+
+    state_data = client.get("/api/state").json()["menu"]
+    assert state_data["type"] == "json"
+    assert state_data["image_path"].startswith("/uploads/")
+    assert state_data["categories"][0]["items"][0]["name"] == "滷肉飯"
