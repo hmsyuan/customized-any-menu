@@ -155,7 +155,16 @@ button:disabled {
 }
 
 .menu-image-helper {
-  margin-bottom: 10px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  background: #f9fafb;
+}
+
+.menu-image-helper summary {
+  cursor: pointer;
+  font-weight: 600;
 }
 
 .dish-option {
@@ -190,8 +199,33 @@ button:disabled {
   font-size: 12px;
 }
 
+.qty-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.qty-step-btn {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 8px;
+  font-size: 16px;
+  line-height: 1;
+  background: #e5e7eb;
+  color: #111827;
+  border: 1px solid #cbd5e1;
+}
+
+.qty-step-btn:hover {
+  background: #d1d5db;
+}
+
 .qty-input {
   width: 56px;
+  text-align: center;
+  padding: 6px 4px;
 }
 
 .inline-delete-btn {
@@ -275,6 +309,7 @@ small {
   .dish-option strong,
   .dish-option .size-select,
   .dish-option .size-static,
+  .dish-option .qty-stepper,
   .dish-option .qty-input {
     grid-column: 2;
   }

@@ -135,13 +135,18 @@ function renderMenu(menu) {
           <option value="大">大</option>
         </select>
         <input id="dish-price" type="number" min="0" placeholder="價格" />
-        <input id="dish-quantity" type="number" min="1" value="1" placeholder="數量" />
+        <div class="qty-stepper">
+          <button type="button" class="qty-step-btn" data-target-qty="dish-quantity" data-step="-1">-</button>
+          <input id="dish-quantity" type="number" min="1" value="1" placeholder="數量" />
+          <button type="button" class="qty-step-btn" data-target-qty="dish-quantity" data-step="1">+</button>
+        </div>
         <button type="submit">新增到我的清單</button>
       </form>
       <ul id="my-items"></ul>
       <button id="submit-my-order">送出我的點餐</button>
     `;
     attachTextOrderHandlers();
+    bindQuantityStepper(wrap);
     return;
   }
 
@@ -211,7 +216,11 @@ function renderMenu(menu) {
             <span>${item.name}</span>
             ${sizeControlHtml}
             <strong class="price-tag" id="price-${stateKey}">$${rowState.price}</strong>
-            <input type="number" min="1" value="${Math.max(1, Number(rowState.quantity) || 1)}" class="qty-input" id="qty-${stateKey}" data-state-key="${stateKey}" />
+            <div class="qty-stepper">
+              <button type="button" class="qty-step-btn" data-state-key="${stateKey}" data-step="-1">-</button>
+              <input type="number" min="1" value="${Math.max(1, Number(rowState.quantity) || 1)}" class="qty-input" id="qty-${stateKey}" data-state-key="${stateKey}" />
+              <button type="button" class="qty-step-btn" data-state-key="${stateKey}" data-step="1">+</button>
+            </div>
           </label>`;
         })
         .join("");
@@ -220,7 +229,7 @@ function renderMenu(menu) {
     .join("");
 
   const imageHelperHtml = menu.image_path
-    ? `<div class="menu-image-helper"><small>菜單圖片（輔助檢視）</small><img src="${menu.image_path}" alt="菜單圖片" style="max-width:100%;border-radius:12px;margin-top:6px" /></div>`
+    ? `<details class="menu-image-helper"><summary>菜單圖片（輔助檢視）</summary><img src="${menu.image_path}" alt="菜單圖片" style="max-width:100%;border-radius:12px;margin-top:6px" /></details>`
     : "";
 
   wrap.innerHTML = `
@@ -230,6 +239,7 @@ function renderMenu(menu) {
       <div class="category-layout">${categoriesHtml || "<small>查無符合的菜色</small>"}</div>
       <button type="submit">送出我的點餐</button>
     </form>
+    ${imageHelperHtml}
   `;
 
   const form = document.getElementById("json-order-form");
@@ -247,6 +257,19 @@ function renderMenu(menu) {
       const stateKey = qtyEl.dataset.stateKey;
       if (!stateKey || !jsonSelectionState[stateKey]) return;
       jsonSelectionState[stateKey].quantity = Math.max(1, Number(qtyEl.value || 1));
+    });
+  });
+
+  form?.querySelectorAll(".qty-step-btn[data-state-key]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const stateKey = btn.dataset.stateKey;
+      if (!stateKey || !jsonSelectionState[stateKey]) return;
+      const qtyInput = document.getElementById(`qty-${stateKey}`);
+      const current = Math.max(1, Number(jsonSelectionState[stateKey].quantity || 1));
+      const step = Number(btn.dataset.step || 0);
+      const nextQty = Math.max(1, current + step);
+      jsonSelectionState[stateKey].quantity = nextQty;
+      if (qtyInput) qtyInput.value = String(nextQty);
     });
   });
 
@@ -296,6 +319,20 @@ function renderMenu(menu) {
     } catch (err) {
       alert(err.message);
     }
+  });
+}
+
+
+function bindQuantityStepper(root = document) {
+  root.querySelectorAll(".qty-step-btn[data-target-qty]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const targetId = btn.dataset.targetQty;
+      const input = document.getElementById(targetId);
+      if (!input) return;
+      const step = Number(btn.dataset.step || 0);
+      const nextValue = Math.max(1, Number(input.value || 1) + step);
+      input.value = String(nextValue);
+    });
   });
 }
 
