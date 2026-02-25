@@ -127,6 +127,47 @@ def test_import_json_supports_size_price_mapping():
     ]
 
 
+def test_import_json_keeps_single_size_when_plain_price():
+    menu_json = (
+        "{\"title\":\"t\",\"categories\":[{\"name\":\"熱炒類\",\"items\":[{\"name\":\"宮保雞丁\",\"price\":180}]}]}"
+    ).encode("utf-8")
+    client.post("/api/join", data={"name": "amy"})
+
+    files = {"file": ("menu.json", BytesIO(menu_json), "application/json")}
+    resp = client.post("/api/menu/json", data={"name": "amy"}, files=files)
+    assert resp.status_code == 200
+
+    state_data = client.get("/api/state").json()
+    item = state_data["menu"]["categories"][0]["items"][0]
+    assert item["sizeOptions"] == [{"size": "中", "price": 180}]
+
+
+def test_aggregate_summary_grouped_by_category():
+    menu_json = (
+        "{\"title\":\"t\",\"categories\":[{\"name\":\"主食\",\"items\":[{\"name\":\"滷肉飯\",\"price\":80}]},{\"name\":\"湯品\",\"items\":[{\"name\":\"蛤蜊湯\",\"price\":60}]}]}"
+    ).encode("utf-8")
+    client.post("/api/join", data={"name": "amy"})
+    client.post("/api/join", data={"name": "bob"})
+    files = {"file": ("menu.json", BytesIO(menu_json), "application/json")}
+    assert client.post("/api/menu/json", data={"name": "amy"}, files=files).status_code == 200
+
+    client.post(
+        "/api/order", json={"name": "amy", "items": [{"dish": "滷肉飯", "size": "中", "price": 80, "quantity": 2}]}
+    )
+    client.post(
+        "/api/order", json={"name": "bob", "items": [{"dish": "蛤蜊湯", "size": "中", "price": 60, "quantity": 1}]}
+    )
+
+    data = client.get("/api/state").json()
+    grouped = data["aggregatedByCategory"]
+    assert grouped[0]["category"] == "主食"
+    assert grouped[0]["items"][0]["dish"] == "滷肉飯"
+    assert grouped[0]["categoryTotal"] == 160
+    assert grouped[1]["category"] == "湯品"
+    assert grouped[1]["items"][0]["dish"] == "蛤蜊湯"
+    assert grouped[1]["categoryTotal"] == 60
+
+
 def test_only_host_can_delete_submitted_item():
     client.post("/api/join", data={"name": "amy"})
     client.post("/api/join", data={"name": "bob"})
