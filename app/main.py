@@ -100,8 +100,6 @@ def normalize_menu_payload(payload: Any) -> tuple[str, list[dict[str, Any]]]:
             "large": "大",
             "l": "大",
         }
-        default_sizes = ["小", "中", "大"]
-
         if isinstance(raw_price, dict):
             parsed: dict[str, int] = {}
             for key, value in raw_price.items():
@@ -112,17 +110,19 @@ def normalize_menu_payload(payload: Any) -> tuple[str, list[dict[str, Any]]]:
                     continue
 
             if not parsed:
-                return [{"size": size, "price": 0} for size in default_sizes]
+                return [{"size": "中", "price": 0}]
 
-            # 若 JSON 只提供部分份量，缺值時沿用第一個可用價格
-            fallback_price = next(iter(parsed.values()))
-            return [{"size": size, "price": parsed.get(size, fallback_price)} for size in default_sizes]
+            size_order = {"小": 0, "中": 1, "大": 2}
+            return [
+                {"size": size, "price": price}
+                for size, price in sorted(parsed.items(), key=lambda pair: (size_order.get(pair[0], 999), pair[0]))
+            ]
 
         try:
             single_price = max(0, int(raw_price))
         except (TypeError, ValueError):
             single_price = 0
-        return [{"size": size, "price": single_price} for size in default_sizes]
+        return [{"size": "中", "price": single_price}]
 
     categories: list[dict[str, Any]] = []
     for category in categories_raw:
@@ -145,11 +145,13 @@ def normalize_menu_payload(payload: Any) -> tuple[str, list[dict[str, Any]]]:
 
             raw_price = item.get("price", item.get("價格", 0))
             size_options = parse_size_prices(raw_price)
+            default_option = next((opt for opt in size_options if opt["size"] == "中"), size_options[0])
             normalized_items.append(
                 {
                     "name": dish_name,
-                    "price": size_options[1]["price"],
+                    "price": default_option["price"],
                     "sizeOptions": size_options,
+                    "hasSizeOptions": isinstance(raw_price, dict),
                 }
             )
 
@@ -208,7 +210,8 @@ async def import_menu_json(name: str = Form(...), file: UploadFile = File(...)) 
         if state.host is None:
             state.host = name
 
-        state.menu = MenuState(type="json", title=title, categories=categories, image_path=None)
+        existing_image_path = state.menu.image_path
+        state.menu = MenuState(type="json", title=title, categories=categories, image_path=existing_image_path)
         state.reset_orders()
 
     return {"message": "JSON 菜單已匯入"}
@@ -234,8 +237,12 @@ async def import_menu_image(name: str = Form(...), file: UploadFile = File(...))
         if state.host is None:
             state.host = name
 
-        state.menu = MenuState(type="image", title="圖片菜單", categories=[], image_path=f"/uploads/{filename}")
-        state.reset_orders()
+        image_path = f"/uploads/{filename}"
+        if state.menu.categories:
+            state.menu.image_path = image_path
+        else:
+            state.menu = MenuState(type="image", title="圖片菜單", categories=[], image_path=image_path)
+            state.reset_orders()
 
     return {"message": "圖片菜單已匯入"}
 
@@ -269,8 +276,10 @@ def submit_order(payload: SubmitOrderPayload) -> dict[str, str]:
 def delete_submitted_item(payload: DeleteSubmittedItemPayload) -> dict[str, str]:
     with state.lock:
         state.expire_if_needed()
-        if payload.actor != state.host:
-            raise HTTPException(status_code=403, detail="送出後僅主持人可刪除")
+        is_host = payload.actor == state.host
+        is_self = payload.actor == payload.target_user
+        if not (is_host or is_self):
+            raise HTTPException(status_code=403, detail="僅主持人可刪除所有人，或本人刪除自己的項目")
         if payload.target_user not in state.orders:
             raise HTTPException(status_code=404, detail="找不到目標使用者")
 
@@ -306,12 +315,22 @@ def get_state() -> dict[str, Any]:
             for name, items in state.orders.items()
         }
 
-        aggregate_map: dict[tuple[str, str, int], dict[str, Any]] = {}
+        dish_to_category: dict[str, str] = {}
+        for category in state.menu.categories:
+            category_name = str(category.get("name") or "未分類")
+            for item in category.get("items", []):
+                dish_name = str(item.get("name") or "").strip()
+                if dish_name and dish_name not in dish_to_category:
+                    dish_to_category[dish_name] = category_name
+
+        aggregate_map: dict[tuple[str, str, str, int], dict[str, Any]] = {}
         for items in state.orders.values():
             for item in items:
-                key = (item.dish, item.size, item.price)
+                category_name = dish_to_category.get(item.dish, "未分類")
+                key = (category_name, item.dish, item.size, item.price)
                 if key not in aggregate_map:
                     aggregate_map[key] = {
+                        "category": category_name,
                         "dish": item.dish,
                         "size": item.size,
                         "price": item.price,
@@ -321,8 +340,23 @@ def get_state() -> dict[str, Any]:
                 aggregate_map[key]["quantity"] += item.quantity
                 aggregate_map[key]["totalPrice"] += item.quantity * item.price
 
-        aggregated_orders = sorted(aggregate_map.values(), key=lambda x: (x["dish"], x["size"], x["price"]))
+        aggregated_orders = sorted(
+            aggregate_map.values(), key=lambda x: (x["category"], x["dish"], x["size"], x["price"])
+        )
         aggregated_grand_total = sum(row["totalPrice"] for row in aggregated_orders)
+
+        categorized_aggregates: dict[str, list[dict[str, Any]]] = {}
+        for row in aggregated_orders:
+            categorized_aggregates.setdefault(row["category"], []).append(row)
+
+        aggregated_by_category = [
+            {
+                "category": category,
+                "items": rows,
+                "categoryTotal": sum(item["totalPrice"] for item in rows),
+            }
+            for category, rows in sorted(categorized_aggregates.items(), key=lambda pair: pair[0])
+        ]
 
         remaining_seconds = max(0, int(SESSION_TTL_SECONDS - (time.time() - state.session_started_at)))
 
@@ -331,6 +365,7 @@ def get_state() -> dict[str, Any]:
             "users": sorted(state.users),
             "orders": all_orders,
             "aggregatedOrders": aggregated_orders,
+            "aggregatedByCategory": aggregated_by_category,
             "aggregatedGrandTotal": aggregated_grand_total,
             "host": state.host,
             "sessionRemainingSeconds": remaining_seconds,
